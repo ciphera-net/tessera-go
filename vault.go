@@ -3,7 +3,7 @@ package tessera
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hkdf" // Go 1.24+ stdlib HKDF (RFC 5869).
+	"crypto/hkdf" // stdlib HKDF (RFC 5869), available since Go 1.24; the module's go.mod floor is 1.25.
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
