@@ -1,0 +1,45 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.25' }
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test -race ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: tessera-go }
+      - uses: actions/checkout@v4
+        with:
+          repository: ciphera-net/tessera     # the private Rust crate
+          path: tessera-rust
+          token: ${{ secrets.CI_REPO_TOKEN }} # PAT / deploy key with read access
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.25' }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: tessera-rust }
+      - name: Build sidecar + client helper
+        working-directory: tessera-rust
+        run: |
+          cargo build --release --bin tessera-sidecar
+          cargo build --release --example client_helper
+      - name: Integration test
+        working-directory: tessera-go
+        env:
+          TESSERA_SIDECAR_BIN: ${{ github.workspace }}/tessera-rust/target/release/tessera-sidecar
+          TESSERA_CLIENT_HELPER_BIN: ${{ github.workspace }}/tessera-rust/target/release/examples/client_helper
+        run: go test -tags integration -race ./...
