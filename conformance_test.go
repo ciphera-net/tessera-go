@@ -9,6 +9,7 @@ package tessera
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -125,6 +126,42 @@ func TestConformanceKEKKAT(t *testing.T) {
 		}
 		if hex.EncodeToString(kek) != vec.KekHex {
 			t.Errorf("KEK KAT %q: got %s want %s", vec.Context, hex.EncodeToString(kek), vec.KekHex)
+		}
+	}
+}
+
+// TestConformanceVaultNegative verifies Open REJECTS each negative vector with the pinned error class
+// (no decryption oracle: wrong-key / wrong-context / tamper / truncation all collapse to Malformed;
+// an unknown version is the distinct UnsupportedVersion).
+func TestConformanceVaultNegative(t *testing.T) {
+	type v struct {
+		Name        string `json:"name"`
+		VaultKeyHex string `json:"vaultKeyHex"`
+		Context     string `json:"context"`
+		EnvelopeHex string `json:"envelopeHex"`
+		Expect      string `json:"expect"`
+	}
+	for _, vec := range loadVectors[v](t, "vault-negative.json") {
+		key, err := hex.DecodeString(vec.VaultKeyHex)
+		if err != nil {
+			t.Fatalf("%s: bad vaultKeyHex: %v", vec.Name, err)
+		}
+		env, err := hex.DecodeString(vec.EnvelopeHex)
+		if err != nil {
+			t.Fatalf("%s: bad envelopeHex: %v", vec.Name, err)
+		}
+		_, openErr := Open(key, vec.Context, env)
+		switch vec.Expect {
+		case "UnsupportedVersion":
+			if !errors.Is(openErr, ErrUnsupportedVersion) {
+				t.Errorf("%s: want ErrUnsupportedVersion, got %v", vec.Name, openErr)
+			}
+		case "Malformed":
+			if !errors.Is(openErr, ErrMalformedEnvelope) {
+				t.Errorf("%s: want ErrMalformedEnvelope, got %v", vec.Name, openErr)
+			}
+		default:
+			t.Errorf("%s: unknown expect %q", vec.Name, vec.Expect)
 		}
 	}
 }

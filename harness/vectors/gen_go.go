@@ -13,6 +13,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/hkdf"
 	"crypto/sha256"
 	"encoding/hex"
@@ -36,6 +37,10 @@ const (
 	// (which calls the SDK's deriveKEK) is checked against an independent reference and catches an
 	// SDK info-string / param drift.
 	vaultKEKInfo = "tessera/vault/v1/record/"
+
+	// vaultMinEnvelopeLen mirrors tessera's unexported vaultMinEnvelopeLen (89 bytes): version(1) +
+	// nonceW(12) + wrappedDEK(48) + nonceC(12) + content tag(16). Used to build the "truncated" negative.
+	vaultMinEnvelopeLen = 89
 )
 
 // fileHeader is the versioned wrapper emitted at the top of every vector file (fields are promoted
@@ -72,6 +77,19 @@ type blindIndexFile struct {
 type vaultFile struct {
 	fileHeader
 	Vectors []vaultEntry `json:"vectors"`
+}
+
+type negativeEntry struct {
+	Name        string `json:"name"`
+	VaultKeyHex string `json:"vaultKeyHex"`
+	Context     string `json:"context"`
+	EnvelopeHex string `json:"envelopeHex"`
+	Expect      string `json:"expect"` // "UnsupportedVersion" | "Malformed" — the error class Open must return
+}
+
+type negativeFile struct {
+	fileHeader
+	Vectors []negativeEntry `json:"vectors"`
 }
 
 func must[T any](v T, err error) T {
@@ -144,14 +162,41 @@ func main() {
 		}
 	}
 
+	// ── Negative / rejection vectors (Open MUST reject; pins the expected error CLASS, not a message) ──
+	negBase := must(tessera.Seal(vaultKey, "address", []byte("negative-base")))
+	badVersion := append([]byte(nil), negBase...)
+	badVersion[0] = 0x02
+	truncated := append([]byte(nil), negBase[:vaultMinEnvelopeLen-1]...) // one byte under the minimum
+	tamperedTag := append([]byte(nil), negBase...)
+	tamperedTag[len(tamperedTag)-1] ^= 0x01 // flip a bit in the content GCM tag
+	negEntries := []negativeEntry{
+		{"bad-version", vaultKeyHex, "address", hex.EncodeToString(badVersion), "UnsupportedVersion"},
+		{"truncated", vaultKeyHex, "address", hex.EncodeToString(truncated), "Malformed"},
+		{"tampered-tag", vaultKeyHex, "address", hex.EncodeToString(tamperedTag), "Malformed"},
+		{"wrong-context", vaultKeyHex, "totp", hex.EncodeToString(negBase), "Malformed"},
+		{"wrong-key", hex.EncodeToString(bytes.Repeat([]byte{0x02}, 32)), "address", hex.EncodeToString(negBase), "Malformed"},
+	}
+	// Self-check: every negative MUST fail to Open (never emit a "negative" that secretly opens).
+	for _, n := range negEntries {
+		k := must(hex.DecodeString(n.VaultKeyHex))
+		e := must(hex.DecodeString(n.EnvelopeHex))
+		if _, err := tessera.Open(k, n.Context, e); err == nil {
+			fmt.Fprintf(os.Stderr, "FATAL: negative %q unexpectedly opened\n", n.Name)
+			os.Exit(1)
+		}
+	}
+
 	biJSON := must(json.MarshalIndent(blindIndexFile{hdr(), biEntries}, "", "  "))
 	vaultJSON := must(json.MarshalIndent(vaultFile{hdr(), vaultEntries}, "", "  "))
+	negJSON := must(json.MarshalIndent(negativeFile{hdr(), negEntries}, "", "  "))
 
 	if !*write {
 		fmt.Println("=== blind-index.json ===")
 		fmt.Println(string(biJSON))
 		fmt.Println("\n=== vault.json ===")
 		fmt.Println(string(vaultJSON))
+		fmt.Println("\n=== vault-negative.json ===")
+		fmt.Println(string(negJSON))
 		return
 	}
 
@@ -177,4 +222,5 @@ func main() {
 	}
 	writeFile("blind-index.json", biJSON)
 	writeFile("vault.json", vaultJSON)
+	writeFile("vault-negative.json", negJSON)
 }
