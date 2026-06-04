@@ -44,6 +44,7 @@ func hdr() fileHeader {
 
 type blindIndexEntry struct {
 	Email               string `json:"email"`
+	NormalizedEmail     string `json:"normalizedEmail"` // KAT: byte-exact normalization (trim → Unicode lower)
 	BlindIndexBase64Url string `json:"blindIndexBase64Url"`
 }
 
@@ -82,11 +83,18 @@ func main() {
 		" bob+tag@gmail.com ",
 		"USER@EXAMPLE.COM",
 		"  Alice@Example.ORG  ",
+		"\tuser@example.com\n",       // tab/newline whitespace → trims to the canonical form
+		"  spaced.out@example.com  ", // double-sided ASCII spaces
+		"a.very.long.local.part.exceeding.normal.length@subdomain.example.museum", // long local-part + multi-label domain
+		"multi+tag+two@gmail.com", // multiple plus segments (NO plus-stripping in v1)
+		"José@example.com",        // Unicode: J→j; é already lowercase, stays U+00E9; NO NFC/IDNA in v1
+		"ZÜRICH@example.com",      // Unicode case fold: Z/R/I/C/H + Ü→ü (Go ToLower & Rust to_lowercase agree on Latin-1)
 	}
 	biEntries := make([]blindIndexEntry, len(biEmails))
 	for i, email := range biEmails {
 		biEntries[i] = blindIndexEntry{
 			Email:               email,
+			NormalizedEmail:     tessera.NormalizeEmail(email),
 			BlindIndexBase64Url: tessera.BlindIndexString(email),
 		}
 	}
