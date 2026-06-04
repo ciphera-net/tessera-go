@@ -13,6 +13,8 @@
 package main
 
 import (
+	"crypto/hkdf"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -28,6 +30,12 @@ const (
 	kitVersion  = "1.0.0"
 	suiteID     = "0x01"
 	generatedBy = "tessera-go harness/vectors/gen_go.go"
+
+	// vaultKEKInfo MUST byte-match tessera's unexported vaultKEKInfoBase (vault.go). The KEK KAT is
+	// derived here via stdlib HKDF — independent of the SDK's deriveKEK — so the conformance verifier
+	// (which calls the SDK's deriveKEK) is checked against an independent reference and catches an
+	// SDK info-string / param drift.
+	vaultKEKInfo = "tessera/vault/v1/record/"
 )
 
 // fileHeader is the versioned wrapper emitted at the top of every vector file (fields are promoted
@@ -51,6 +59,7 @@ type blindIndexEntry struct {
 type vaultEntry struct {
 	VaultKeyHex  string `json:"vaultKeyHex"`
 	Context      string `json:"context"`
+	KekHex       string `json:"kekHex"` // KAT: HKDF-SHA256(vaultKey, 32-zero salt, info, 32), byte-exact
 	PlaintextHex string `json:"plaintextHex"`
 	EnvelopeHex  string `json:"envelopeHex"`
 }
@@ -120,9 +129,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "FATAL: round-trip mismatch for context=%q\n", s.context)
 			os.Exit(1)
 		}
+		// KEK KAT: derive independently of the SDK via stdlib HKDF (nil salt → RFC 5869 32-zero salt).
+		kek := must(hkdf.Key(sha256.New, vaultKey, nil, vaultKEKInfo+s.context, 32))
 		vaultEntries[i] = vaultEntry{
 			VaultKeyHex:  vaultKeyHex,
 			Context:      s.context,
+			KekHex:       hex.EncodeToString(kek),
 			PlaintextHex: hex.EncodeToString(pt),
 			EnvelopeHex:  hex.EncodeToString(env),
 		}

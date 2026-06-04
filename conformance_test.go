@@ -90,3 +90,41 @@ func TestConformanceVaultOpen(t *testing.T) {
 		}
 	}
 }
+
+// TestConformanceNormalizedEmailKAT verifies the SDK's NormalizeEmail reproduces the pinned KAT
+// (trim → Unicode lower) byte-for-byte for every blind-index vector.
+func TestConformanceNormalizedEmailKAT(t *testing.T) {
+	type v struct {
+		Email           string `json:"email"`
+		NormalizedEmail string `json:"normalizedEmail"`
+	}
+	for _, vec := range loadVectors[v](t, "blind-index.json") {
+		if got := NormalizeEmail(vec.Email); got != vec.NormalizedEmail {
+			t.Errorf("normalize %q: got %q want %q", vec.Email, got, vec.NormalizedEmail)
+		}
+	}
+}
+
+// TestConformanceKEKKAT verifies the SDK's (unexported, white-box) deriveKEK reproduces the pinned
+// KEK KAT, which the generator derived INDEPENDENTLY via stdlib HKDF — so a drift in the SDK's
+// info-string/params is caught here, not masked by self-reference.
+func TestConformanceKEKKAT(t *testing.T) {
+	type v struct {
+		VaultKeyHex string `json:"vaultKeyHex"`
+		Context     string `json:"context"`
+		KekHex      string `json:"kekHex"`
+	}
+	for _, vec := range loadVectors[v](t, "vault.json") {
+		key, err := hex.DecodeString(vec.VaultKeyHex)
+		if err != nil {
+			t.Fatalf("bad vaultKeyHex for %q: %v", vec.Context, err)
+		}
+		kek, err := deriveKEK(key, vec.Context) // white-box: same-package access to the unexported derivation
+		if err != nil {
+			t.Fatalf("deriveKEK %q: %v", vec.Context, err)
+		}
+		if hex.EncodeToString(kek) != vec.KekHex {
+			t.Errorf("KEK KAT %q: got %s want %s", vec.Context, hex.EncodeToString(kek), vec.KekHex)
+		}
+	}
+}
