@@ -1,8 +1,8 @@
 //go:build conformance
 
 // Command gen_go regenerates the Phase 4 conformance vectors using the authoritative tessera-go SDK.
-// Build-tagged `conformance` (a dev tool): excluded from the default build, and (from Task 7) it imports
-// the conformance-only DeriveKEKForConformance. Run from the tessera-go module root:
+// Build-tagged `conformance` (a dev-only tool): excluded from the default build. Run from the tessera-go
+// module root:
 //
 //	go run -tags conformance ./harness/vectors            # print to stdout
 //	go run -tags conformance ./harness/vectors --write    # write ../../../ciphera-tessera/conformance/vectors/*.json
@@ -119,6 +119,10 @@ func main() {
 		{"address", "hello vault"},
 		{"totp", "JBSWY3DPEHPK3PXP"},
 		{"address", `{"street":"123 Main St","city":"Zurich"}`},
+		{"address", ""},                                     // empty plaintext → the 89-byte minimum envelope
+		{"notes", string(make([]byte, 4096))},               // large plaintext (4 KiB of 0x00)
+		{"display_name", "Zürich café — naïve ✓ 日本語"},       // multi-byte UTF-8 plaintext
+		{"address:user-123", "scoped to a record identity"}, // context-with-identity form
 	}
 	vaultEntries := make([]vaultEntry, len(seeds))
 	for i, s := range seeds {
