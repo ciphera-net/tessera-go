@@ -46,6 +46,8 @@ jobs:
         env:
           TESSERA_SIDECAR_BIN: ${{ github.workspace }}/tessera-rust/target/release/tessera-sidecar
           TESSERA_CLIENT_HELPER_BIN: ${{ github.workspace }}/tessera-rust/target/release/examples/client_helper
+        # NOTE: `-v` is intentionally omitted — examples/client_helper prints export_key on stdout
+        # (see its WARNING); `-v` would forward that ephemeral test value into the CI logs.
         run: go test -tags integration -race ./...
 
   # Conformance: verify the canonical Phase 4 vectors (in the private core repo's conformance/vectors)

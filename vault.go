@@ -121,8 +121,10 @@ func Seal(vaultKey []byte, context string, plaintext []byte) ([]byte, error) {
 }
 
 // Open reverses Seal. The caller MUST supply the same context used to Seal. It returns
-// ErrUnsupportedVersion for an unknown version, ErrEmptyContext for an empty context, and
-// ErrMalformedEnvelope for a too-short envelope, a wrong key/context, or any failed tag.
+// ErrUnsupportedVersion for an unknown version, ErrEmptyVaultKey for an empty key, ErrEmptyContext
+// for an empty context, and ErrMalformedEnvelope for a too-short envelope, a wrong key/context, or
+// any failed tag. The empty-key/empty-context guards signal caller error and are independent of
+// envelope content, so they are not a decryption oracle.
 func Open(vaultKey []byte, context string, envelope []byte) ([]byte, error) {
 	if len(envelope) < 1 {
 		return nil, ErrMalformedEnvelope
