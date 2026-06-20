@@ -4,7 +4,7 @@ Server-side Go SDK for [Tessera](https://github.com/ciphera-net/tessera), Cipher
 zero-knowledge identity system: OPAQUE password login (the password never reaches the server)
 and a generic client-encrypted vault.
 
-> **Self-reviewed, not independently audited.** Apache-2.0. See the
+> Self-reviewed; not yet independently audited. Apache-2.0. See the
 > [security model](https://github.com/ciphera-net/tessera/blob/main/docs/THREAT-MODEL.md)
 > and [self-audit](https://github.com/ciphera-net/tessera/blob/main/docs/SELF-AUDIT.md) before relying on it.
 
