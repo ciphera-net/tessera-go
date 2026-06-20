@@ -7,8 +7,8 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with: { go-version: '1.25' }
       - name: gofmt
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
@@ -20,21 +20,20 @@ jobs:
   integration:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: tessera-go }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          repository: ciphera-net/tessera     # the private Rust crate
+          repository: ciphera-net/tessera     # now public — anonymous checkout
           path: tessera-rust
-          token: ${{ secrets.CI_REPO_TOKEN }} # PAT / deploy key with read access
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25'
           # tessera-go is checked out into a subdir here, so point the module cache at its go.sum
           # (otherwise setup-go warns that go.sum is not at the workspace root and skips caching).
           cache-dependency-path: tessera-go/go.sum
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with: { workspaces: tessera-rust }
       - name: Build sidecar + client helper
         working-directory: tessera-rust
@@ -50,21 +49,20 @@ jobs:
         # (see its WARNING); `-v` would forward that ephemeral test value into the CI logs.
         run: go test -tags integration -race ./...
 
-  # Conformance: verify the canonical Phase 4 vectors (in the private core repo's conformance/vectors)
+  # Conformance: verify the canonical Phase 4 vectors (in the public core repo's conformance/vectors)
   # reproduce byte-for-byte via the tessera-go SDK. White-box, build-tagged `conformance`; no sidecar
   # needed (vectors are static data). TESSERA_VECTORS_DIR points at the core checkout so the path is
   # explicit regardless of the checkout dir name.
   conformance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with: { path: tessera-go }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: ciphera-net/tessera     # canonical conformance vectors live in conformance/vectors
           path: tessera-rust
-          token: ${{ secrets.CI_REPO_TOKEN }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25'
           cache-dependency-path: tessera-go/go.sum
@@ -73,3 +71,14 @@ jobs:
         env:
           TESSERA_VECTORS_DIR: ${{ github.workspace }}/tessera-rust/conformance/vectors
         run: go test -tags conformance -run TestConformance ./...
+
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with: { go-version: '1.25' }
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: govulncheck
+        run: govulncheck ./...
