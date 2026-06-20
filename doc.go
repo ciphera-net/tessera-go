@@ -10,6 +10,6 @@
 //   - A generic client-encrypted vault (Seal/Open) for arbitrary user-private records, using a
 //     versioned DEK/KEK AES-256-GCM envelope.
 //
-// Persistence and session issuance (JWT) are the caller's responsibility (e.g. id-backend),
-// not this SDK's.
+// Persistence and session issuance (JWT) are the caller's responsibility (your identity
+// service), not this SDK's.
 package tessera

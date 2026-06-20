@@ -4,7 +4,9 @@ Server-side Go SDK for [Tessera](https://github.com/ciphera-net/tessera), Cipher
 zero-knowledge identity system: OPAQUE password login (the password never reaches the server)
 and a generic client-encrypted vault.
 
-> Private until external audit. Apache-2.0.
+> **Self-reviewed, not independently audited.** Apache-2.0. See the
+> [security model](https://github.com/ciphera-net/tessera/blob/main/docs/THREAT-MODEL.md)
+> and [self-audit](https://github.com/ciphera-net/tessera/blob/main/docs/SELF-AUDIT.md) before relying on it.
 
 ## Install
     go get github.com/ciphera-net/tessera-go
@@ -16,7 +18,7 @@ Requires **Go 1.25+** (the `golang.org/x/crypto` dependency sets the floor; the 
 - **Is:** a pooled client for the OPAQUE sidecar, an Argon2id blind index, and a versioned
   AES-256-GCM vault (`Seal`/`Open`).
 - **Is not:** an OPAQUE client (the browser is, via the shared Rust core), a database, or a JWT
-  issuer. Persistence and sessions live in your application (e.g. `id-backend`).
+  issuer. Persistence and sessions live in your application (your identity service).
 
 ## The actors
 | Step | Browser (TS SDK) | Your server (this SDK) | Sidecar (Rust) | Your DB |

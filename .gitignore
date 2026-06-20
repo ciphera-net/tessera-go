@@ -1,3 +1,13 @@
 *.test
 *.out
 /coverage*
+
+# Secrets / key material — never commit (OPAQUE ServerSetup is operator-provided)
+*.bin
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+server-setup*
