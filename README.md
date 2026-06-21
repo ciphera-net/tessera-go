@@ -41,5 +41,6 @@ for parity vectors and trusted offline tooling only.
     // sessionKey now matches the browser's; issue your JWT.
 
 ## CI
-The integration test runs the real sidecar + a Rust OPAQUE client-helper; it needs read access
-to the private `ciphera-net/tessera` repo via the `CI_REPO_TOKEN` secret.
+The integration test runs the real sidecar + a Rust OPAQUE client-helper built from
+[`ciphera-net/tessera`](https://github.com/ciphera-net/tessera) (public) — CI checks it out
+anonymously; no token required.
