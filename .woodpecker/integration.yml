@@ -1,0 +1,24 @@
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+
+steps:
+  build-sidecar:
+    image: rust:1
+    commands:
+      - D=$(dirname $(pwd))
+      - git clone --depth 1 https://github.com/ciphera-net/tessera.git "$D/tessera-rust"
+      - cd "$D/tessera-rust"
+      - cargo build --release --bin tessera-sidecar
+      - cargo build --release --example client_helper
+
+  integration:
+    image: golang:1.25
+    commands:
+      - D=$(dirname $(pwd))
+      - export TESSERA_SIDECAR_BIN="$D/tessera-rust/target/release/tessera-sidecar"
+      - export TESSERA_CLIENT_HELPER_BIN="$D/tessera-rust/target/release/examples/client_helper"
+      # NOTE: `-v` is intentionally omitted — examples/client_helper prints export_key on stdout
+      # (see its WARNING); `-v` would forward that ephemeral test value into the CI logs.
+      - go test -tags integration -race ./...

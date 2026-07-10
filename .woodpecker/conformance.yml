@@ -1,0 +1,17 @@
+# Conformance: verify the canonical Phase 4 vectors (in the public core repo's conformance/vectors)
+# reproduce byte-for-byte via the tessera-go SDK. White-box, build-tagged `conformance`; no sidecar
+# needed (vectors are static data). TESSERA_VECTORS_DIR points at the core checkout so the path is
+# explicit regardless of the checkout dir name.
+when:
+  - event: push
+    branch: main
+  - event: pull_request
+
+steps:
+  conformance:
+    image: golang:1.25
+    commands:
+      - D=$(dirname $(pwd))
+      - git clone --depth 1 https://github.com/ciphera-net/tessera.git "$D/tessera-rust"
+      - export TESSERA_VECTORS_DIR="$D/tessera-rust/conformance/vectors"
+      - go test -tags conformance -run TestConformance ./...
