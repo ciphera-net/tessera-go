@@ -1,3 +1,4 @@
+# Runs gofmt/vet/race-tested unit tests on every push to main and every PR.
 when:
   - event: push
     branch: main
