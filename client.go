@@ -184,6 +184,10 @@ type loginFinishReq struct {
 	Op              string `json:"op"`
 	LoginID         string `json:"login_id"`
 	FinalizationB64 string `json:"finalization_b64"`
+	// StateB64 is the sealed ServerLogin returned by LoginStart. omitempty so an
+	// empty value is omitted entirely, which the sidecar reads as "use my
+	// in-memory state" — the legacy, single-process path.
+	StateB64 string `json:"state_b64,omitempty"`
 }
 
 type response struct {
@@ -192,6 +196,7 @@ type response struct {
 	ResponseB64     string `json:"response_b64"`
 	PasswordFileB64 string `json:"password_file_b64"`
 	LoginID         string `json:"login_id"`
+	StateB64        string `json:"state_b64"`
 	SessionKeyB64   string `json:"session_key_b64"`
 	Message         string `json:"message"`
 }
@@ -222,18 +227,50 @@ func (c *Client) RegisterFinish(ctx context.Context, uploadB64 string) (password
 // LoginStart begins authentication. passwordFileB64 is the stored record, or nil for an unknown
 // account (the sidecar then returns a timing-safe fake response — DO pass nil, never fabricate a
 // record, to keep account existence unobservable).
+//
+// Deprecated: use LoginStartSealed. This form discards the sealed state, which
+// ties the matching LoginFinish to this exact sidecar process.
 func (c *Client) LoginStart(ctx context.Context, requestB64 string, passwordFileB64 *string, credentialID string) (loginID, responseB64 string, err error) {
+	loginID, responseB64, _, err = c.LoginStartSealed(ctx, requestB64, passwordFileB64, credentialID)
+	return loginID, responseB64, err
+}
+
+// LoginStartSealed begins authentication and additionally returns the SEALED server login state.
+//
+// Store stateB64 wherever you store loginID and hand it back to LoginFinishSealed. It is
+// ciphertext under a key derived from the sidecar's ServerSetup, so your datastore never sees the
+// server's key-exchange state — and any process holding that same ServerSetup can finish the
+// login. That is what allows more than one server replica: without it, LoginFinish must reach the
+// very process that served LoginStart, because the state lives in that process's memory.
+func (c *Client) LoginStartSealed(ctx context.Context, requestB64 string, passwordFileB64 *string, credentialID string) (loginID, responseB64, stateB64 string, err error) {
 	r, err := c.exchange(ctx, loginStartReq{Op: "login_start", RequestB64: requestB64, PasswordFileB64: passwordFileB64, CredentialID: credentialID})
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	return r.LoginID, r.ResponseB64, nil
+	return r.LoginID, r.ResponseB64, r.StateB64, nil
 }
 
 // LoginFinish finalizes authentication and returns the server's session key (equal to the
 // client's on success).
+//
+// Deprecated: use LoginFinishSealed. Without the sealed state this must run against the same
+// sidecar process that served LoginStart, and returns SidecarError{Code: "unknown_login"}
+// otherwise — which is indistinguishable, to a caller that does not check the code, from a
+// wrong password.
 func (c *Client) LoginFinish(ctx context.Context, loginID, finalizationB64 string) (sessionKeyB64 string, err error) {
-	r, err := c.exchange(ctx, loginFinishReq{Op: "login_finish", LoginID: loginID, FinalizationB64: finalizationB64})
+	return c.LoginFinishSealed(ctx, loginID, finalizationB64, "")
+}
+
+// LoginFinishSealed finalizes authentication using the sealed state from LoginStartSealed.
+//
+// An empty stateB64 falls back to the sidecar's in-memory state (the deprecated single-process
+// path). A sealed state that is expired, tampered with, or bound to a different loginID returns
+// SidecarError{Code: "unknown_login"} — deliberately without distinguishing which, so nothing
+// here becomes an oracle. Treat that code as "this ceremony is over, start a new one", NOT as a
+// failed password: counting it as a credential failure means a correct password can accrue
+// lockouts.
+func (c *Client) LoginFinishSealed(ctx context.Context, loginID, finalizationB64, stateB64 string) (sessionKeyB64 string, err error) {
+	r, err := c.exchange(ctx, loginFinishReq{Op: "login_finish", LoginID: loginID, FinalizationB64: finalizationB64, StateB64: stateB64})
 	if err != nil {
 		return "", err
 	}
