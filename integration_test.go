@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"net"
 	"os"
 	"os/exec"
@@ -182,5 +183,102 @@ func TestRealHandshakeAndVault(t *testing.T) {
 	}
 	if !bytes.Equal(got, record) {
 		t.Fatal("vault round-trip mismatch under real export_key")
+	}
+}
+
+// startSidecar boots a sidecar against an EXISTING ServerSetup and returns a
+// connected client. Two calls with the same setup file model two replicas: they
+// share one Vault-rendered secret and nothing else.
+func startSidecar(t *testing.T, sidecarBin, dir, setup, name string) *Client {
+	t.Helper()
+	socket := filepath.Join(dir, name)
+	sc := exec.Command(sidecarBin, "serve", socket, setup)
+	sc.Stderr = os.Stderr
+	if err := sc.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sc.Process.Kill(); _, _ = sc.Process.Wait() })
+	waitForSocket(t, socket)
+	c := NewClient(socket)
+	t.Cleanup(func() { _ = c.Close() })
+	return c
+}
+
+// TestSealedStateFinishesOnAnotherSidecar is the SDK-level proof of the property
+// that lets a server run more than one replica: a login started against one
+// sidecar process is finished against a different one.
+//
+// The Rust repo proves the same thing about the sidecar; this proves the JOIN —
+// that the Go SDK actually carries `state_b64` across the wire in both
+// directions. That join is the part a passing Rust suite and a passing Go unit
+// suite can BOTH miss, because each mocks the other side.
+//
+// Without it, a second replica fails roughly half of all logins, and fails them
+// destructively: the caller resolves a real user from its shared binding, gets
+// `unknown_login` back, and counts a correct password as a failed attempt.
+func TestSealedStateFinishesOnAnotherSidecar(t *testing.T) {
+	sidecarBin := mustEnv(t, "TESSERA_SIDECAR_BIN")
+	helperBin := mustEnv(t, "TESSERA_CLIENT_HELPER_BIN")
+
+	dir := t.TempDir()
+	setup := filepath.Join(dir, "shared-setup.bin")
+	if out, err := exec.Command(sidecarBin, "gen-setup", setup).CombinedOutput(); err != nil {
+		t.Fatalf("gen-setup: %v: %s", err, out)
+	}
+
+	// Two independent processes, sharing only the ServerSetup file.
+	a := startSidecar(t, sidecarBin, dir, setup, "a.sock")
+	b := startSidecar(t, sidecarBin, dir, setup, "b.sock")
+
+	h := newHelper(t, helperBin)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	const password = "correcthorsebatterystaple"
+	credID := BlindIndexString("multi-replica@example.com")
+
+	// Register through A; finish registration on B — registration is stateless,
+	// so this must work and is worth pinning.
+	regReq := h.line(t, "reg-start "+password)[0]
+	regRespB64, err := a.RegisterStart(ctx, regReq, credID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploadB64 := h.line(t, "reg-finish "+password+" "+regRespB64)[0]
+	passwordFileB64, err := b.RegisterFinish(ctx, uploadB64)
+	if err != nil {
+		t.Fatalf("registration is stateless and must complete on either process: %v", err)
+	}
+
+	// Login START on A.
+	loginReq := h.line(t, "login-start "+password)[0]
+	loginID, credRespB64, stateB64, err := a.LoginStartSealed(ctx, loginReq, &passwordFileB64, credID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stateB64 == "" {
+		t.Fatal("LoginStartSealed returned no sealed state — the sidecar is too old, or state_b64 is not being carried")
+	}
+	loginFin := h.line(t, "login-finish "+password+" "+credRespB64)
+	finalizationB64, clientSessionKeyB64 := loginFin[0], loginFin[1]
+
+	// Login FINISH on B, which never saw the start.
+	serverSessionKeyB64, err := b.LoginFinishSealed(ctx, loginID, finalizationB64, stateB64)
+	if err != nil {
+		t.Fatalf("sealed state must let a second process finish the login: %v", err)
+	}
+	if serverSessionKeyB64 != clientSessionKeyB64 {
+		t.Fatalf("session key mismatch across processes:\n server=%s\n client=%s", serverSessionKeyB64, clientSessionKeyB64)
+	}
+
+	// Negative control: WITHOUT the sealed state, B cannot finish A's login.
+	// If this ever stops failing, the test above proves nothing.
+	_, err = b.LoginFinishSealed(ctx, loginID, finalizationB64, "")
+	if err == nil {
+		t.Fatal("the legacy path must NOT succeed on a process that never served login/start")
+	}
+	var se *SidecarError
+	if !errors.As(err, &se) || se.Code != "unknown_login" {
+		t.Fatalf("expected unknown_login from the legacy path, got %v", err)
 	}
 }
