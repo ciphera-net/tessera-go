@@ -118,7 +118,7 @@ steps:
         # read must never fail a green build.
         sccache --show-stats 2>/dev/null | grep -E 'Cache hits|Cache misses|Cache errors|Cache hits rate' || true
   integration:
-    image: golang:1.25
+    image: golang:1.26
     backend_options:
       kubernetes:
         resources:
